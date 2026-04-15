@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Monitoring Software</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ===== API CONFIGURATION =====
+    const API_BASE_URL = 'http://localhost:3000/api';
+
+    // ===== API SERVICE =====
+    const api = {
+      // Projects
+      getProjects: async () => {
+        const res = await fetch(`${API_BASE_URL}/projects`);
+        return await res.json();
+      },
+      
+      getProject: async (id) => {
+        const res = await fetch(`${API_BASE_URL}/projects/${id}`);
+        return await res.json();
+      },
+      
+      createProject: async (projectData) => {
+        const res = await fetch(`${API_BASE_URL}/projects`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(projectData)
+        });
+        return await res.json();
+      },
+      
+      updateProject: async (id, projectData) => {
+        const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(projectData)
+        });
+        return await res.json();
+      },
+      
+      deleteProject: async (id) => {
+        const res = await fetch(`${API_BASE_URL}/projects/${id}`, {
+          method: 'DELETE'
+        });
+        return await res.json();
+      },
+      
+      // AI Generation
+      generateChecklist: async (description) => {
+        const res = await fetch(`${API_BASE_URL}/ai/generate-checklist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description })
+        });
+        return await res.json();
+      },
+      
+      generateFromFiles: async (files, description) => {
+        const formData = new FormData();
+        files.forEach(file => formData.append('files', file));
+        if (description) formData.append('description', description);
+        
+        const res = await fetch(`${API_BASE_URL}/ai/generate-from-files`, {
+          method: 'POST',
+          body: formData
+        });
+        return await res.json();
+      }
+    };
+
+    // ===== MAIN APP COMPONENT =====
+    function App() {
+      const [projects, setProjects] = useState([]);
+      const [currentProject, setCurrentProject] = useState(null);
+      const [view, setView] = useState('projects');
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      
+      // AI Generator state
+      const [aiInput, setAiInput] = useState('');
+      const [aiFiles, setAiFiles] = useState([]);
+      const [aiGenerating, setAiGenerating] = useState(false);
+      
+      // In-project AI modal
+      const [showAIModal, setShowAIModal] = useState(false);
+      const [aiModalInput, setAiModalInput] = useState('');
+      const [aiModalFiles, setAiModalFiles] = useState([]);
+      
+      const [expanded, setExpanded] = useState(null);
+
+      // Load projects on mount
+      useEffect(() => {
+        loadProjects();
+      }, []);
+
+      const loadProjects = async () => {
+        try {
+          setLoading(true);
+          const data = await api.getProjects();
+          setProjects(data.projects || []);
+          setError(null);
+        } catch (err) {
+          setError('Failed to load projects. Make sure the backend server is running.');
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const addProject = async () => {
+        const name = prompt('Enter project name:');
+        if (!name) return;
+        
+        const address = prompt('Enter address/location:') || '';
+        const type = prompt('Enter project type:') || 'General';
+        
+        try {
+          const data = await api.createProject({ name, address, type, items: [] });
+          setProjects([...projects, data.project]);
+        } catch (err) {
+          alert('Failed to create project: ' + err.message);
+        }
+      };
+
+      const deleteProject = async (id) => {
+        if (!confirm('Delete this project?')) return;
+        
+        try {
+          await api.deleteProject(id);
+          setProjects(projects.filter(p => p.id !== id));
+          if (currentProject?.id === id) {
+            setCurrentProject(null);
+            setView('projects');
+          }
+        } catch (err) {
+          alert('Failed to delete project: ' + err.message);
+        }
+      };
+
+      const openProject = (project) => {
+        setCurrentProject(project);
+        setView('checklist');
+      };
+
+      const updateCurrentProject = async (updatedData) => {
+        try {
+          const data = await api.updateProject(currentProject.id, updatedData);
+          setCurrentProject(data.project);
+          setProjects(projects.map(p => 
+            p.id === currentProject.id ? data.project : p
+          ));
+        } catch (err) {
+          alert('Failed to update project: ' + err.message);
+        }
+      };
+
+      // AI Generation
+      const generateAIChecklist = async () => {
+        if (!aiInput.trim() && aiFiles.length === 0) {
+          alert('Please provide description or upload files!');
+          return;
+        }
+
+        setAiGenerating(true);
+        
+        try {
+          let data;
+          if (aiFiles.length > 0) {
+            data = await api.generateFromFiles(aiFiles, aiInput);
+          } else {
+            data = await api.generateChecklist(aiInput);
+          }
+
+          const name = prompt('Enter project name:');
+          if (!name) {
+            setAiGenerating(false);
+            return;
+          }
+
+          const projectData = await api.createProject({
+            name,
+            address: '',
+            type: 'AI Generated',
+            items: data.items.map((item, idx) => ({
+              id: idx + 1,
+              ...item,
+              completed: false,
+              comment: '',
+              dateEntries: []
+            }))
+          });
+
+          setProjects([...projects, projectData.project]);
+          setAiInput('');
+          setAiFiles([]);
+          alert('✅ AI checklist created!');
+          
+        } catch (err) {
+          alert('AI generation failed: ' + err.message);
+        } finally {
+          setAiGenerating(false);
+        }
+      };
+
+      const generateItemsForCurrentProject = async () => {
+        if (!aiModalInput.trim() && aiModalFiles.length === 0) {
+          alert('Please provide description or upload files!');
+          return;
+        }
+
+        setAiGenerating(true);
+
+        try {
+          let data;
+          if (aiModalFiles.length > 0) {
+            data = await api.generateFromFiles(aiModalFiles, aiModalInput);
+          } else {
+            data = await api.generateChecklist(aiModalInput);
+          }
+
+          const maxId = currentProject.items.length > 0 
+            ? Math.max(...currentProject.items.map(i => i.id)) 
+            : 0;
+
+          const newItems = data.items.map((item, idx) => ({
+            id: maxId + idx + 1,
+            ...item,
+            completed: false,
+            comment: '',
+            dateEntries: []
+          }));
+
+          await updateCurrentProject({
+            ...currentProject,
+            items: [...currentProject.items, ...newItems]
+          });
+
+          setAiModalInput('');
+          setAiModalFiles([]);
+          setShowAIModal(false);
+          alert(`✅ Added ${newItems.length} AI-generated items!`);
+          
+        } catch (err) {
+          alert('AI generation failed: ' + err.message);
+        } finally {
+          setAiGenerating(false);
+        }
+      };
+
+      // Checklist item functions
+      const toggleComplete = (id) => {
+        const updated = currentProject.items.map(item =>
+          item.id === id ? {...item, completed: !item.completed} : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const updateComment = (id, comment) => {
+        const updated = currentProject.items.map(item =>
+          item.id === id ? {...item, comment} : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const addDateEntry = (itemId) => {
+        const entry = {
+          id: Date.now(),
+          date: new Date().toISOString().split('T')[0],
+          note: "",
+          photos: []
+        };
+        const updated = currentProject.items.map(item =>
+          item.id === itemId ? {...item, dateEntries: [...item.dateEntries, entry]} : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const updateDateEntry = (itemId, entryId, field, value) => {
+        const updated = currentProject.items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {...entry, [field]: value} : entry
+            )
+          } : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const deleteDateEntry = (itemId, entryId) => {
+        if (!confirm('Delete this entry?')) return;
+        const updated = currentProject.items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.filter(entry => entry.id !== entryId)
+          } : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const addPhotos = (itemId, entryId, files) => {
+        const newPhotos = Array.from(files).map(file => ({
+          name: file.name,
+          url: URL.createObjectURL(file)
+        }));
+        const updated = currentProject.items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {...entry, photos: [...entry.photos, ...newPhotos]} : entry
+            )
+          } : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const deletePhoto = (itemId, entryId, photoIdx) => {
+        const updated = currentProject.items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {
+                ...entry,
+                photos: entry.photos.filter((_, idx) => idx !== photoIdx)
+              } : entry
+            )
+          } : item
+        );
+        updateCurrentProject({ ...currentProject, items: updated });
+      };
+
+      const addCustomItem = () => {
+        const title = prompt('Enter item title:');
+        if (!title) return;
+        
+        const description = prompt('Enter description:') || '';
+        const contractor = prompt('Enter contractor type:') || 'TBD';
+        const category = prompt('Enter category:') || 'Custom';
+        
+        const newItem = {
+          id: Date.now(),
+          title,
+          description,
+          contractor,
+          category,
+          priority: 'medium',
+          completed: false,
+          comment: '',
+          dateEntries: []
+        };
+        
+        updateCurrentProject({
+          ...currentProject,
+          items: [...currentProject.items, newItem]
+        });
+      };
+
+      const deleteItem = (id) => {
+        if (confirm('Delete this item?')) {
+          updateCurrentProject({
+            ...currentProject,
+            items: currentProject.items.filter(item => item.id !== id)
+          });
+        }
+      };
+
+      // Loading state
+      if (loading) {
+        return (
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f5f5f5'}}>
+            <div style={{textAlign: 'center'}}>
+              <h2>Loading...</h2>
+              <p>Connecting to backend server...</p>
+            </div>
+          </div>
+        );
+      }
+
+      // Error state
+      if (error) {
+        return (
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#f5f5f5'}}>
+            <div style={{textAlign: 'center', maxWidth: '600px', padding: '20px'}}>
+              <h2 style={{color: '#ff5722'}}>⚠️ Connection Error</h2>
+              <p style={{color: '#666', marginBottom: '20px'}}>{error}</p>
+              <div style={{background: '#fff3cd', padding: '15px', borderRadius: '8px', marginBottom: '20px', textAlign: 'left'}}>
+                <strong>To start the backend server:</strong>
+                <ol style={{margin: '10px 0', paddingLeft: '20px'}}>
+                  <li>Install dependencies: <code>npm install</code></li>
+                  <li>Set your API key: <code>export ANTHROPIC_API_KEY=your-key</code></li>
+                  <li>Start server: <code>npm start</code></li>
+                </ol>
+              </div>
+              <button onClick={loadProjects} style={{padding: '12px 24px', background: '#4caf50', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '15px', fontWeight: '600'}}>
+                Retry Connection
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // PROJECTS VIEW
+      if (view === 'projects') {
+        return (
+          <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px 15px'}}>
+            <div style={{maxWidth: '1000px', margin: '0 auto'}}>
+              
+              <div style={{background: 'white', borderRadius: '15px', padding: '25px', marginBottom: '25px', boxShadow: '0 8px 20px rgba(0,0,0,0.15)'}}>
+                <h1 style={{margin: '0 0 10px 0', fontSize: '32px', fontWeight: '700', color: '#2c3e50'}}>
+                  🏗️ Site Monitoring Software
+                </h1>
+                <p style={{margin: 0, color: '#666', fontSize: '15px'}}>
+                  Manage projects with AI-powered checklists • Connected to Backend ✅
+                </p>
+              </div>
+
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px'}}>
+                <button onClick={addProject} style={{padding: '18px', background: 'linear-gradient(135deg, #4caf50 0%, #45a049 100%)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '16px', fontWeight: '600', boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)'}}>
+                  ➕ New Project
+                </button>
+                <button onClick={() => setView('ai')} style={{padding: '18px', background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '16px', fontWeight: '600', boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)'}}>
+                  🤖 AI Generator
+                </button>
+              </div>
+
+              <div>
+                <h2 style={{color: 'white', fontSize: '22px', fontWeight: '600', marginBottom: '15px'}}>
+                  Your Projects ({projects.length})
+                </h2>
+                
+                {projects.length === 0 ? (
+                  <div style={{background: 'white', borderRadius: '12px', padding: '60px 20px', textAlign: 'center'}}>
+                    <p style={{fontSize: '18px', color: '#666', margin: 0}}>No projects yet. Click "New Project" to start!</p>
+                  </div>
+                ) : (
+                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px'}}>
+                    {projects.map(project => {
+                      const completed = project.items.filter(i => i.completed).length;
+                      const total = project.items.length;
+                      const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+                      
+                      return (
+                        <div key={project.id} style={{background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', cursor: 'pointer'}} onClick={() => openProject(project)}>
+                          <h3 style={{margin: '0 0 8px 0', fontSize: '20px', fontWeight: '600'}}>{project.name}</h3>
+                          {project.address && <p style={{margin: '0 0 8px 0', fontSize: '14px', color: '#666'}}>📍 {project.address}</p>}
+                          <div style={{display: 'inline-block', padding: '4px 10px', background: '#e3f2fd', borderRadius: '6px', fontSize: '12px', color: '#1976d2', marginBottom: '12px'}}>{project.type}</div>
+                          <div style={{marginBottom: '12px'}}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '6px'}}>
+                              <span style={{fontSize: '13px', color: '#666'}}>Progress</span>
+                              <span style={{fontSize: '13px', fontWeight: '600'}}>{completed}/{total}</span>
+                            </div>
+                            <div style={{background: '#f0f0f0', borderRadius: '10px', height: '8px'}}>
+                              <div style={{background: '#4caf50', height: '100%', width: progress + '%', borderRadius: '10px'}} />
+                            </div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); deleteProject(project.id); }} style={{width: '100%', padding: '8px', background: '#ff5722', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'}}>
+                            Delete
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // AI GENERATOR VIEW
+      if (view === 'ai') {
+        return (
+          <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px 15px'}}>
+            <div style={{maxWidth: '800px', margin: '0 auto'}}>
+              <button onClick={() => setView('projects')} style={{marginBottom: '20px', padding: '10px 20px', background: 'white', color: '#667eea', border: 'none', borderRadius: '8px', cursor: 'pointer'}}>
+                ← Back
+              </button>
+
+              <div style={{background: 'white', borderRadius: '15px', padding: '30px'}}>
+                <h1 style={{margin: '0 0 10px 0', fontSize: '28px', fontWeight: '700'}}>🤖 AI Checklist Generator</h1>
+                <p style={{margin: '0 0 25px 0', color: '#666'}}>Upload files or describe your project</p>
+
+                <div style={{marginBottom: '20px'}}>
+                  <label style={{display: 'block', fontWeight: '600', marginBottom: '8px'}}>📎 Upload Files</label>
+                  <input type="file" multiple onChange={(e) => setAiFiles(Array.from(e.target.files))} style={{display: 'block', marginBottom: '10px'}} />
+                  {aiFiles.length > 0 && <div style={{fontSize: '14px', color: '#666'}}>{aiFiles.length} file(s) selected</div>}
+                </div>
+
+                <div style={{marginBottom: '20px'}}>
+                  <label style={{display: 'block', fontWeight: '600', marginBottom: '8px'}}>✍️ Description</label>
+                  <textarea value={aiInput} onChange={(e) => setAiInput(e.target.value)} placeholder="Describe your project..." style={{width: '100%', minHeight: '150px', padding: '15px', borderRadius: '10px', border: '2px solid #e0e0e0', fontSize: '15px', resize: 'vertical'}} />
+                </div>
+
+                <button onClick={generateAIChecklist} disabled={aiGenerating} style={{width: '100%', padding: '16px', background: aiGenerating ? '#ccc' : '#ff6b6b', color: 'white', border: 'none', borderRadius: '12px', cursor: aiGenerating ? 'not-allowed' : 'pointer', fontSize: '16px', fontWeight: '600'}}>
+                  {aiGenerating ? '🔄 Generating with Real AI...' : '✨ Generate Checklist'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // CHECKLIST VIEW (simplified version - full implementation similar to standalone)
+      if (view === 'checklist' && currentProject) {
+        const completed = currentProject.items.filter(i => i.completed).length;
+        const progress = currentProject.items.length > 0 ? Math.round((completed / currentProject.items.length) * 100) : 0;
+
+        return (
+          <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #f5f1ed 0%, #e8e3dc 100%)', padding: '20px 15px'}}>
+            <div style={{maxWidth: '900px', margin: '0 auto'}}>
+              
+              <button onClick={() => setView('projects')} style={{marginBottom: '20px', padding: '10px 20px', background: 'white', color: '#8b5e3c', border: '2px solid #8b5e3c', borderRadius: '8px', cursor: 'pointer'}}>
+                ← Back
+              </button>
+
+              <div style={{background: 'linear-gradient(135deg, #8b5e3c 0%, #6d4c3a 100%)', borderRadius: '15px', padding: '25px 20px', marginBottom: '20px', color: 'white'}}>
+                <h1 style={{margin: '0 0 10px 0', fontSize: '28px', fontWeight: '700'}}>{currentProject.name}</h1>
+                {currentProject.address && <p style={{margin: '0 0 5px 0'}}>{currentProject.address}</p>}
+                <p style={{margin: 0, fontSize: '14px', opacity: 0.85}}>{currentProject.type}</p>
+              </div>
+
+              <div style={{background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px'}}>
+                  <div>
+                    <h2 style={{margin: '0 0 5px 0', fontSize: '20px'}}>Progress</h2>
+                    <p style={{margin: 0, color: '#666'}}>{completed} of {currentProject.items.length} completed</p>
+                  </div>
+                  <button onClick={() => setShowAIModal(true)} style={{padding: '10px 18px', background: '#ff6b6b', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600'}}>
+                    🤖 AI Generate Items
+                  </button>
+                </div>
+                <div style={{background: '#f5f1ed', borderRadius: '10px', height: '10px'}}>
+                  <div style={{background: '#8b5e3c', height: '100%', width: progress + '%', borderRadius: '10px'}} />
+                </div>
+              </div>
+
+              {currentProject.items.map((item) => (
+                <div key={item.id} style={{background: item.completed ? '#f0fdf4' : 'white', borderRadius: '12px', padding: '18px', marginBottom: '15px', border: item.completed ? '2px solid #4caf50' : '2px solid transparent'}}>
+                  <div onClick={() => toggleComplete(item.id)} style={{cursor: 'pointer', marginBottom: '12px'}}>
+                    <input type="checkbox" checked={item.completed} readOnly style={{marginRight: '10px'}} />
+                    <span style={{fontSize: '17px', fontWeight: '600', textDecoration: item.completed ? 'line-through' : 'none'}}>
+                      {item.title}
+                    </span>
+                  </div>
+                  <p style={{margin: '0 0 10px 0', paddingLeft: '30px', color: '#555'}}>{item.description}</p>
+                  <button onClick={() => deleteItem(item.id)} style={{padding: '6px 10px', background: '#ff5722', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer'}}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+
+              <button onClick={addCustomItem} style={{width: '100%', padding: '16px', background: '#4caf50', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '16px', fontWeight: '600'}}>
+                + Add Custom Item
+              </button>
+
+              {/* AI Modal */}
+              {showAIModal && (
+                <div style={{position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'}}>
+                  <div style={{background: 'white', borderRadius: '15px', padding: '30px', maxWidth: '600px', width: '100%'}}>
+                    <button onClick={() => setShowAIModal(false)} style={{float: 'right', background: '#ff5722', color: 'white', border: 'none', borderRadius: '50%', width: '30px', height: '30px', cursor: 'pointer'}}>✕</button>
+                    <h2 style={{margin: '0 0 20px 0'}}>🤖 AI Generate Items</h2>
+                    <input type="file" multiple onChange={(e) => setAiModalFiles(Array.from(e.target.files))} style={{display: 'block', marginBottom: '15px'}} />
+                    <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="Description..." style={{width: '100%', minHeight: '100px', padding: '12px', borderRadius: '8px', border: '2px solid #e0e0e0', marginBottom: '15px', resize: 'vertical'}} />
+                    <button onClick={generateItemsForCurrentProject} disabled={aiGenerating} style={{width: '100%', padding: '14px', background: aiGenerating ? '#ccc' : '#ff6b6b', color: 'white', border: 'none', borderRadius: '10px', cursor: aiGenerating ? 'not-allowed' : 'pointer', fontWeight: '600'}}>
+                      {aiGenerating ? '🔄 Generating...' : '✨ Generate & Add'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        );
+      }
+
+      return null;
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
