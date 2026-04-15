@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11660 Winding Way - Repair Checklist</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const allItems = [
+      { id: 1, title: "Roof professionally cleaned", description: "Remove all debris, moss, algae, and organic buildup", contractor: "Licensed roofing contractor", category: "Exterior", priority: "high" },
+      { id: 2, title: "Roof flashing gap sealed", description: "Gap at roof flashing properly sealed where roofing meets exterior wall/chimney", contractor: "Licensed roofing contractor", category: "Exterior", priority: "high" },
+      { id: 3, title: "Garage door serviced and repaired", description: "Ensure proper, safe operation - springs, tracks, sensors, automatic opener", contractor: "Qualified contractor", category: "Garage", priority: "medium" },
+      { id: 4, title: "All doors properly functioning", description: "Front entry, glass deck doors, all interior doors, bedroom 2 handle repair", contractor: "General contractor", category: "Interior", priority: "medium" },
+      { id: 5, title: "Electrical wiring in bedroom 2", description: "Stranded wiring terminated, in junction boxes, code-compliant", contractor: "Licensed electrician", category: "Bedroom 2", priority: "high" },
+      { id: 6, title: "Baseboard trim in bedroom 2", description: "Reinstall or replace missing baseboard to match existing", contractor: "General contractor", category: "Bedroom 2", priority: "low" },
+      { id: 7, title: "Flickering lights repaired", description: "Multiple bedrooms - fixtures, switches, wiring corrected per code", contractor: "Licensed electrician", category: "Electrical", priority: "high" },
+      { id: 8, title: "Missing cap in bathroom 4", description: "Reinstall or replace with matching piece", contractor: "General contractor", category: "Bathroom 4", priority: "low" },
+      { id: 9, title: "Bathtub chip repair in bathroom 4", description: "Professional repair for smooth, sealed, water-tight surface", contractor: "Refinishing specialist", category: "Bathroom 4", priority: "medium" },
+      { id: 10, title: "Professional cleaning", description: "Floors, windows, bathrooms, kitchen, appliances, all surfaces", contractor: "Cleaning service", category: "Whole House", priority: "medium" }
+    ];
+
+    function App() {
+      const [items, setItems] = useState(() => {
+        const saved = localStorage.getItem('repairChecklist');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+        return allItems.map(item => ({
+          ...item,
+          completed: false,
+          comment: "",
+          dateEntries: []
+        }));
+      });
+
+      const [expanded, setExpanded] = useState(null);
+
+      useEffect(() => {
+        localStorage.setItem('repairChecklist', JSON.stringify(items));
+      }, [items]);
+
+      const toggleComplete = (id) => {
+        setItems(items.map(item => 
+          item.id === id ? {...item, completed: !item.completed} : item
+        ));
+      };
+
+      const updateComment = (id, comment) => {
+        setItems(items.map(item =>
+          item.id === id ? {...item, comment} : item
+        ));
+      };
+
+      const addDate = (itemId) => {
+        const entry = {
+          id: Date.now(),
+          date: new Date().toISOString().split('T')[0],
+          note: "",
+          photos: []
+        };
+        setItems(items.map(item =>
+          item.id === itemId ? {...item, dateEntries: [...item.dateEntries, entry]} : item
+        ));
+      };
+
+      const updateDate = (itemId, entryId, field, value) => {
+        setItems(items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {...entry, [field]: value} : entry
+            )
+          } : item
+        ));
+      };
+
+      const deleteDate = (itemId, entryId) => {
+        if (confirm('Delete this date entry and all its photos?')) {
+          setItems(items.map(item =>
+            item.id === itemId ? {
+              ...item,
+              dateEntries: item.dateEntries.filter(entry => entry.id !== entryId)
+            } : item
+          ));
+        }
+      };
+
+      const addPhotos = (itemId, entryId, files) => {
+        const newPhotos = Array.from(files).map(file => ({
+          name: file.name,
+          url: URL.createObjectURL(file)
+        }));
+        setItems(items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {...entry, photos: [...entry.photos, ...newPhotos]} : entry
+            )
+          } : item
+        ));
+      };
+
+      const deletePhoto = (itemId, entryId, photoIdx) => {
+        setItems(items.map(item =>
+          item.id === itemId ? {
+            ...item,
+            dateEntries: item.dateEntries.map(entry =>
+              entry.id === entryId ? {
+                ...entry,
+                photos: entry.photos.filter((_, idx) => idx !== photoIdx)
+              } : entry
+            )
+          } : item
+        ));
+      };
+
+      const addCustomItem = () => {
+        const title = prompt('Enter repair item title:');
+        if (!title) return;
+        
+        const description = prompt('Enter description (optional):') || '';
+        const contractor = prompt('Enter contractor type (optional):') || 'To be determined';
+        const category = prompt('Enter category (optional):') || 'Custom';
+        
+        const newItem = {
+          id: Date.now(),
+          title,
+          description,
+          contractor,
+          category,
+          priority: 'medium',
+          completed: false,
+          comment: '',
+          dateEntries: []
+        };
+        
+        setItems([...items, newItem]);
+      };
+
+      const deleteItem = (id) => {
+        if (confirm('Delete this item permanently?')) {
+          setItems(items.filter(item => item.id !== id));
+        }
+      };
+
+      const completed = items.filter(i => i.completed).length;
+      const progress = Math.round((completed / items.length) * 100);
+
+      return (
+        <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #f5f1ed 0%, #e8e3dc 100%)', padding: '20px 15px'}}>
+          <div style={{maxWidth: '900px', margin: '0 auto'}}>
+            
+            {/* Header */}
+            <div style={{background: 'linear-gradient(135deg, #8b5e3c 0%, #6d4c3a 100%)', borderRadius: '15px', padding: '25px 20px', marginBottom: '20px', color: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.1)'}}>
+              <h1 style={{margin: '0 0 10px 0', fontSize: '28px', fontWeight: '700'}}>11660 Winding Way</h1>
+              <p style={{margin: '0 0 5px 0', opacity: 0.95}}>Los Altos, CA 94024</p>
+              <p style={{margin: 0, opacity: 0.85, fontSize: '14px'}}>Seller Repair Items</p>
+            </div>
+
+            {/* Progress */}
+            <div style={{background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.08)'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px'}}>
+                <div>
+                  <h2 style={{margin: '0 0 5px 0', fontSize: '20px', fontWeight: '600'}}>Progress</h2>
+                  <p style={{margin: 0, color: '#666', fontSize: '14px'}}>{completed} of {items.length} completed</p>
+                </div>
+                <div style={{textAlign: 'right'}}>
+                  <div style={{fontSize: '13px', color: '#666'}}>Documentation due</div>
+                  <div style={{fontSize: '15px', fontWeight: '600', color: '#8b5e3c'}}>4 days before close</div>
+                </div>
+              </div>
+              <div style={{background: '#f5f1ed', borderRadius: '10px', height: '10px', overflow: 'hidden'}}>
+                <div style={{background: 'linear-gradient(90deg, #8b5e3c 0%, #a97854 100%)', height: '100%', width: progress + '%', transition: 'width 0.3s', borderRadius: '10px'}} />
+              </div>
+            </div>
+
+            {/* Items */}
+            {items.map((item, idx) => (
+              <div key={item.id} style={{background: item.completed ? '#f0fdf4' : 'white', borderRadius: '12px', padding: '18px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', border: item.completed ? '2px solid #4caf50' : '2px solid transparent', position: 'relative'}}>
+                
+                {item.priority === 'high' && !item.completed && (
+                  <div style={{position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: '#ff5722', borderTopLeftRadius: '12px', borderBottomLeftRadius: '12px'}} />
+                )}
+
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', gap: '10px'}}>
+                  <div onClick={() => toggleComplete(item.id)} style={{cursor: 'pointer', flex: 1}}>
+                    <input type="checkbox" checked={item.completed} readOnly style={{marginRight: '10px', width: '20px', height: '20px', cursor: 'pointer'}} />
+                    <span style={{fontSize: '17px', fontWeight: '600', color: item.completed ? '#4caf50' : '#2c2c2c', textDecoration: item.completed ? 'line-through' : 'none'}}>
+                      {item.id > 10 ? '⭐' : item.id + '.'} {item.title}
+                    </span>
+                    <span style={{marginLeft: '10px', padding: '3px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '500', background: '#8b5e3c', color: 'white'}}>
+                      {item.category}
+                    </span>
+                  </div>
+                  {item.id > 10 && (
+                    <button
+                      onClick={() => deleteItem(item.id)}
+                      style={{padding: '6px 10px', background: '#ff5722', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: '500'}}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+
+                <p style={{margin: '0 0 10px 0', color: '#555', fontSize: '14px', paddingLeft: '30px'}}>{item.description}</p>
+                <div style={{paddingLeft: '30px', marginBottom: '12px', fontSize: '13px', color: '#666'}}>
+                  <span style={{display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: item.priority === 'high' ? '#ff5722' : item.priority === 'medium' ? '#ff9800' : '#8b5e3c', marginRight: '6px'}} />
+                  {item.contractor}
+                </div>
+
+                <button 
+                  onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+                  style={{width: '100%', padding: '10px', background: expanded === item.id ? '#8b5e3c' : '#f5f1ed', color: expanded === item.id ? 'white' : '#8b5e3c', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '500'}}
+                >
+                  {expanded === item.id ? '▲ Hide Timeline' : '▼ Track Progress Timeline'}
+                </button>
+
+                {expanded === item.id && (
+                  <div style={{marginTop: '15px', paddingTop: '15px', borderTop: '2px solid #f5f1ed'}}>
+                    
+                    {/* General Notes */}
+                    <div style={{marginBottom: '15px'}}>
+                      <label style={{display: 'block', fontSize: '14px', fontWeight: '600', marginBottom: '6px'}}>General Notes</label>
+                      <textarea
+                        value={item.comment}
+                        onChange={(e) => updateComment(item.id, e.target.value)}
+                        placeholder="Overall notes about this repair..."
+                        style={{width: '100%', minHeight: '70px', padding: '10px', borderRadius: '8px', border: '2px solid #e8e3dc', fontSize: '14px', fontFamily: 'Inter', resize: 'vertical'}}
+                      />
+                    </div>
+
+                    {/* Timeline */}
+                    <div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '10px', flexWrap: 'wrap'}}>
+                        <label style={{fontSize: '15px', fontWeight: '600'}}>📅 Work Timeline</label>
+                        <button 
+                          onClick={() => addDate(item.id)}
+                          style={{padding: '8px 16px', background: '#4caf50', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '14px', fontWeight: '600'}}
+                        >
+                          + Add Date
+                        </button>
+                      </div>
+
+                      <div style={{padding: '10px', background: 'rgba(139, 94, 60, 0.08)', borderRadius: '8px', marginBottom: '12px', fontSize: '13px', color: '#6d4c3a'}}>
+                        {item.dateEntries.length} {item.dateEntries.length === 1 ? 'entry' : 'entries'} recorded
+                      </div>
+
+                      {item.dateEntries.length === 0 ? (
+                        <div style={{padding: '40px 20px', background: '#fafaf8', borderRadius: '10px', textAlign: 'center', border: '2px dashed #d4c8ba'}}>
+                          <p style={{margin: '0 0 15px 0', color: '#666', fontSize: '14px'}}>No timeline entries yet.<br/>Click "+ Add Date" to track work progress</p>
+                        </div>
+                      ) : (
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                          {item.dateEntries.sort((a, b) => new Date(b.date) - new Date(a.date)).map(entry => (
+                            <div key={entry.id} style={{background: '#f9f9f9', borderRadius: '10px', padding: '15px', border: '1px solid #e8e3dc'}}>
+                              
+                              {/* Date & Delete */}
+                              <div style={{display: 'flex', gap: '10px', marginBottom: '12px'}}>
+                                <div style={{flex: 1}}>
+                                  <label style={{display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px'}}>Date</label>
+                                  <input
+                                    type="date"
+                                    value={entry.date}
+                                    onChange={(e) => updateDate(item.id, entry.id, 'date', e.target.value)}
+                                    style={{width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #e8e3dc', fontSize: '14px'}}
+                                  />
+                                </div>
+                                <button 
+                                  onClick={() => deleteDate(item.id, entry.id)}
+                                  style={{marginTop: '20px', padding: '8px 12px', background: '#ff5722', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '500'}}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+
+                              {/* Notes */}
+                              <div style={{marginBottom: '12px'}}>
+                                <label style={{display: 'block', fontSize: '12px', color: '#666', marginBottom: '4px'}}>Notes for this date</label>
+                                <textarea
+                                  value={entry.note}
+                                  onChange={(e) => updateDate(item.id, entry.id, 'note', e.target.value)}
+                                  placeholder="What happened on this date? (e.g., 'Contractor started work', 'Materials delivered')"
+                                  style={{width: '100%', minHeight: '60px', padding: '8px', borderRadius: '6px', border: '1px solid #e8e3dc', fontSize: '13px', fontFamily: 'Inter', resize: 'vertical'}}
+                                />
+                              </div>
+
+                              {/* Photos */}
+                              <div>
+                                <label style={{display: 'block', fontSize: '12px', color: '#666', marginBottom: '6px'}}>Photos ({entry.photos.length})</label>
+                                
+                                {entry.photos.length > 0 && (
+                                  <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px', marginBottom: '8px'}}>
+                                    {entry.photos.map((photo, pIdx) => (
+                                      <div key={pIdx} style={{position: 'relative', borderRadius: '6px', overflow: 'hidden', aspectRatio: '1', background: '#e8e3dc'}}>
+                                        <img src={photo.url} alt={photo.name} style={{width: '100%', height: '100%', objectFit: 'cover'}} />
+                                        <button
+                                          onClick={() => deletePhoto(item.id, entry.id, pIdx)}
+                                          style={{position: 'absolute', top: '4px', right: '4px', background: 'rgba(0,0,0,0.7)', color: 'white', border: 'none', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', fontSize: '12px', padding: 0}}
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <label style={{display: 'inline-block', padding: '8px 14px', background: 'white', color: '#8b5e3c', border: '1px solid #8b5e3c', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '500'}}>
+                                  📷 Add Photos
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={(e) => addPhotos(item.id, entry.id, e.target.files)}
+                                    style={{display: 'none'}}
+                                  />
+                                </label>
+                              </div>
+
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
+                )}
+
+              </div>
+            ))}
+
+            {/* Add Custom Item Button */}
+            <div style={{marginTop: '20px', marginBottom: '20px'}}>
+              <button
+                onClick={addCustomItem}
+                style={{width: '100%', padding: '16px', background: 'linear-gradient(135deg, #4caf50 0%, #45a049 100%)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontSize: '16px', fontWeight: '600', boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'}}
+              >
+                <span style={{fontSize: '20px'}}>+</span>
+                Add Custom Repair Item
+              </button>
+              <p style={{margin: '10px 0 0 0', textAlign: 'center', fontSize: '13px', color: '#666'}}>
+                Track additional repairs beyond the original 10 items
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div style={{marginTop: '25px', padding: '18px', background: 'white', borderRadius: '12px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)'}}>
+              <p style={{margin: 0, color: '#666', fontSize: '14px', lineHeight: '1.6'}}>
+                <strong style={{color: '#8b5e3c'}}>Buyers:</strong> Daniar Shayakhmet, Adema Nurzhanova<br/>
+                <strong style={{color: '#8b5e3c'}}>Seller:</strong> Adl 10 LLC<br/>
+                <strong style={{color: '#8b5e3c'}}>Agent:</strong> Jane Konovalova, JetSet Homes | (415) 350-6012
+              </p>
+            </div>
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
